@@ -109,9 +109,78 @@ export default class PostControl {
         +pagesize,
         session,
         searchQuery as string,
-        sortBy as string,
-
+        sortBy as string
       );
+      await session.commitTransaction();
+      res.status(StatusCode.OK).send(posts);
+      await session.endSession();
+    } catch (error) {
+      await session.abortTransaction();
+      await session.endSession();
+      next(error);
+    }
+  }
+  public static async allPost(
+    req: Request,
+    res: Response,
+    next: NextFunction
+  ): Promise<void> {
+    const session = await mongoose.startSession();
+    await session.startTransaction();
+    try {
+      const id = req.id!;
+      const { page = 1, pagesize = 4, searchQuery, sortBy } = req.query;
+      const posts = await PostService.allPosts(
+        id,
+        +page,
+        +pagesize,
+        session,
+        searchQuery as string,
+        sortBy as string
+      );
+      await session.commitTransaction();
+      res.status(StatusCode.OK).send(posts);
+      await session.endSession();
+    } catch (error) {
+      await session.abortTransaction();
+      await session.endSession();
+      next(error);
+    }
+  }
+
+  public static async likePost(
+    req: Request,
+    res: Response,
+    next: NextFunction
+  ): Promise<void> {
+    const session = await mongoose.startSession();
+    await session.startTransaction();
+    try {
+      const id = req.id!;
+      const title = req.params.title;
+      const posts = await PostService.likePost(id, title, session);
+      await session.commitTransaction();
+      res.status(StatusCode.OK).send(posts);
+      await session.endSession();
+    } catch (error) {
+      await session.abortTransaction();
+      await session.endSession();
+      next(error);
+    }
+  }
+
+  public static async commentPost(
+    req: Request,
+    res: Response,
+    next: NextFunction
+  ): Promise<void> {
+    const session = await mongoose.startSession();
+    await session.startTransaction();
+    try {
+      const id = req.id!;
+      const title = req.params.title;
+      const { comment } = req.body;
+      const posts = await PostService.commentPost(id, title,comment, session);
       await session.commitTransaction();
       res.status(StatusCode.OK).send(posts);
       await session.endSession();

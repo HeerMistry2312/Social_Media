@@ -1,10 +1,11 @@
-import { ClientSession, Types } from "mongoose";
+import { ClientSession, ObjectId, Types } from "mongoose";
 import User from "../model/user.model";
 import { AppError } from "../utils/customErrorHandler";
 import StatusConstants from "../constant/status.constant";
 import Post from "../model/post.model";
 import PostPipeline from "../query/post.query";
-
+import Follow from "../model/follow.model";
+import Comment from "../model/comment.model";
 export default class PostService {
   public static async createPost(
     id: Types.ObjectId,
@@ -21,10 +22,7 @@ export default class PostService {
     }
     const post = new Post({ title: title, content: content, author: id });
     await post.save({ session });
-
-    const pipeline = PostPipeline.getPost(post._id as Types.ObjectId, title);
-    const details = Post.aggregate(pipeline);
-    return { message: "Posted Success", data: details };
+    return { message: "Posted Success", data: post };
   }
 
   public static async updatePost(
@@ -48,7 +46,7 @@ export default class PostService {
         StatusConstants.NOT_FOUND.httpStatusCode
       );
     }
-    if (post.author !== id) {
+    if (post.author != id) {
       throw new AppError(
         StatusConstants.UNAUTHORIZED.body.message,
         StatusConstants.UNAUTHORIZED.httpStatusCode
@@ -59,12 +57,8 @@ export default class PostService {
       { title: title, content: content },
       { new: true }
     ).session(session);
-    const pipeline = PostPipeline.getPost(
-      post._id as Types.ObjectId,
-      post.title
-    );
-    const details = Post.aggregate(pipeline);
-    return { message: "Update Success", data: details };
+
+    return { message: "Update Success", data: updateData };
   }
 
   public static async deletePost(
@@ -117,11 +111,8 @@ export default class PostService {
         StatusConstants.NOT_FOUND.httpStatusCode
       );
     }
-    const pipeline = PostPipeline.getPost(
-      post._id as Types.ObjectId,
-      post.title
-    );
-    const details = Post.aggregate(pipeline);
+    const pipeline = PostPipeline.getPost(post._id);
+    const details = await Post.aggregate(pipeline);
     return { data: details };
   }
   public static async getAllPost(
@@ -164,6 +155,80 @@ export default class PostService {
       totalPages: Math.ceil(totalPosts / pageSize),
     };
   }
+  public static async allPosts(
+    id: Types.ObjectId,
+    page: number,
+    pageSize: number,
+    session: ClientSession,
+    searchQuery?: string,
+    sortBy?: string
+  ): Promise<object> {
+    const follow = await Follow.findOne({ userId: id }).session(session);
+    if (!follow) {
+      throw new AppError(
+        StatusConstants.NOT_FOUND.body.message,
+        StatusConstants.NOT_FOUND.httpStatusCode
+      );
+    }
+    const Ids = [...follow.followers, ...follow.following];
+    const pipeline = PostPipeline.allPost(
+      Ids,
+      page,
+      pageSize,
+      searchQuery,
+      sortBy
+    );
+    const count = await Post.countDocuments({ author: { $in: Ids } });
+    const data = await Post.aggregate(pipeline);
 
+    return {
+      data: data,
+      currentPage: page,
+      totalPages: Math.ceil(count / pageSize),
+    };
+  }
 
+  public static async likePost(
+    id: Types.ObjectId,
+    title: string,
+    session: ClientSession
+  ): Promise<object> {
+    const post = await Post.findOne({ title: title }).session(session);
+    if (!post) {
+      throw new AppError(
+        StatusConstants.NOT_FOUND.body.message,
+        StatusConstants.NOT_FOUND.httpStatusCode
+      );
+    }
+    if (post.likes.includes(id)) {
+      throw new AppError(
+        StatusConstants.DUPLICATE_KEY_VALUE.body.message,
+        StatusConstants.DUPLICATE_KEY_VALUE.httpStatusCode
+      );
+    }
+    post.likes.push(id);
+    await post.save({ session });
+    return { message: "liked Post" };
+  }
+  public static async commentPost(
+    id: Types.ObjectId,
+    title: string,
+    comment: string,
+    session: ClientSession
+  ): Promise<object> {
+    const post = await Post.findOne({ title: title }).session(session);
+    if (!post) {
+      throw new AppError(
+        StatusConstants.NOT_FOUND.body.message,
+        StatusConstants.NOT_FOUND.httpStatusCode
+      );
+    }
+const comments = new Comment({postId:post._id, text: comment, authorId: id})
+await comments.save({session})
+
+post.comments.push(comments._id)
+    await post.save({ session });
+
+    return { message: "commented on Post" };
+  }
 }
